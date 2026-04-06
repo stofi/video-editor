@@ -122,12 +122,8 @@
           </div>
           <div id="panel-overlay" class="tool-panel" hidden>
             <input type="file" id="overlay-input" accept="image/*" style="display:none" />
-            <button class="preset-btn" onclick="document.getElementById('overlay-input').click()">Choose image</button>
-            <label class="overlay-opacity-label">
-              Opacity: <span id="overlay-opacity-value">100%</span>
-            </label>
-            <input type="range" id="overlay-opacity" min="0" max="100" value="100" />
-            <button id="btn-overlay-remove" class="preset-btn danger" hidden>Remove</button>
+            <button id="btn-add-overlay" class="preset-btn">+ Add image</button>
+            <div id="overlay-layers"></div>
           </div>
           <div id="panel-crop" class="tool-panel" hidden>
             <div class="preset-btns">

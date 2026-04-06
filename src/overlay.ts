@@ -90,6 +90,11 @@ export class ImageOverlay {
     this.onChange?.()
   }
 
+  destroy(): void {
+    this.unload()
+    this.container.removeChild(this.wrapEl)
+  }
+
   setOpacity(v: number): void {
     this.opacity = Math.max(0, Math.min(1, v))
     this.imgEl.style.opacity = String(this.opacity)

@@ -46,10 +46,7 @@ export class Editor {
     el<HTMLVideoElement>('preview-video'),
   )
 
-  private readonly imgOverlay = new ImageOverlay(
-    el('preview-area'),
-    el<HTMLVideoElement>('preview-video'),
-  )
+  private readonly overlays: ImageOverlay[] = []
 
   private readonly textOverlay = new TextOverlay(
     el('preview-area'),
@@ -242,32 +239,13 @@ export class Editor {
     })
     textColorPick.addEventListener('input', () => { this.textOverlay.setColor(textColorPick.value) })
 
-    // Overlay file picker
+    // Image overlay layers
     const overlayInput = el<HTMLInputElement>('overlay-input')
+    el('btn-add-overlay').addEventListener('click', () => overlayInput.click())
     overlayInput.addEventListener('change', () => {
       const file = overlayInput.files?.[0]
-      if (file) {
-        this.imgOverlay.load(file)
-        el('btn-overlay-remove').hidden = false
-      }
-      overlayInput.value = ''  // reset so same file can be re-picked
-    })
-
-    // Opacity slider
-    const opacitySlider = el<HTMLInputElement>('overlay-opacity')
-    const opacityValue  = el('overlay-opacity-value')
-    opacitySlider.addEventListener('input', () => {
-      const v = parseInt(opacitySlider.value) / 100
-      this.imgOverlay.setOpacity(v)
-      opacityValue.textContent = `${opacitySlider.value}%`
-    })
-
-    // Remove overlay
-    el('btn-overlay-remove').addEventListener('click', () => {
-      this.imgOverlay.unload()
-      el('btn-overlay-remove').hidden = true
-      opacitySlider.value = '100'
-      opacityValue.textContent = '100%'
+      if (file) this._addOverlay(file)
+      overlayInput.value = ''
     })
   }
 
@@ -303,8 +281,6 @@ export class Editor {
       el<HTMLInputElement>('text-input').focus()
     } else if (tool === 'overlay') {
       el('panel-overlay').hidden = false
-      // Auto-open file picker if no image loaded yet
-      if (!this.imgOverlay.visible) el<HTMLInputElement>('overlay-input').click()
     }
   }
 
@@ -333,8 +309,8 @@ export class Editor {
       const inputName = 'input' + this.file.name.slice(this.file.name.lastIndexOf('.'))
       const outputName = 'output.mp4'
       const outputFilename = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
-      const hasOverlay = this.imgOverlay.visible && this.imgOverlay.file !== null
-      const hasText    = this.textOverlay.visible && this.textOverlay.text.trim() !== ''
+      const activeOverlays = this.overlays.filter(ov => ov.visible && ov.file !== null)
+      const hasText        = this.textOverlay.visible && this.textOverlay.text.trim() !== ''
 
       // Compute output dimensions (needed for text canvas sizing)
       let outW = this.videoEl.videoWidth
@@ -343,7 +319,9 @@ export class Editor {
       if (this.rotation === 90 || this.rotation === 270) { [outW, outH] = [outH, outW] }
 
       await ff.writeFile(inputName, await fetchFile(this.file))
-      if (hasOverlay) await ff.writeFile('overlay.png', await fetchFile(this.imgOverlay.file!))
+      for (let i = 0; i < activeOverlays.length; i++) {
+        await ff.writeFile(`overlay-${i}.png`, await fetchFile(activeOverlays[i].file!))
+      }
       if (hasText) {
         const canvas = this.textOverlay.toCanvas(outW, outH)
         const pngBlob = await canvasToBlob(canvas)
@@ -355,8 +333,8 @@ export class Editor {
       const args: string[] = []
       if (this.trimStart > 0) args.push('-ss', this.trimStart.toFixed(3))
       args.push('-i', inputName)
-      if (hasOverlay) args.push('-i', 'overlay.png')
-      if (hasText)    args.push('-i', 'text-overlay.png')
+      for (let i = 0; i < activeOverlays.length; i++) args.push('-i', `overlay-${i}.png`)
+      if (hasText) args.push('-i', 'text-overlay.png')
       args.push('-t', (this.trimEnd - this.trimStart).toFixed(3))
       if (this.trimStart > 0) args.push('-avoid_negative_ts', 'make_zero')
 
@@ -372,28 +350,27 @@ export class Editor {
         vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
       }
 
-      if (hasOverlay || hasText) {
+      if (activeOverlays.length > 0 || hasText) {
         const filterParts: string[] = []
-        const baseLabel = vfFilters.length > 0 ? '[base]' : '[0:v]'
+        let currentLabel = vfFilters.length > 0 ? '[base]' : '[0:v]'
         if (vfFilters.length > 0) filterParts.push(`[0:v]${vfFilters.join(',')}[base]`)
 
-        if (hasOverlay) {
-          // Image overlay input is always [1:v]; text (if any) follows at [2:v]
-          const ov = this.imgOverlay.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
-          const ovFilters = [`scale=${ov.w}:${ov.h}`, 'format=rgba']
-          if (ov.opacity < 1) ovFilters.push(`lut=a='val*${ov.opacity.toFixed(4)}'`)
-          filterParts.push(`[1:v]${ovFilters.join(',')}[ov]`)
-          if (hasText) {
-            filterParts.push(`${baseLabel}[ov]overlay=${ov.x}:${ov.y}[v1]`)
-            filterParts.push(`[2:v]format=rgba[txt]`)
-            filterParts.push(`[v1][txt]overlay=0:0[vout]`)
-          } else {
-            filterParts.push(`${baseLabel}[ov]overlay=${ov.x}:${ov.y}[vout]`)
-          }
-        } else {
-          // Text only — canvas PNG is [1:v], composited full-frame at 0:0
-          filterParts.push(`[1:v]format=rgba[txt]`)
-          filterParts.push(`${baseLabel}[txt]overlay=0:0[vout]`)
+        // Chain each image overlay sequentially
+        activeOverlays.forEach((ov, i) => {
+          const px = ov.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
+          const ovFilters = [`scale=${px.w}:${px.h}`, 'format=rgba']
+          if (px.opacity < 1) ovFilters.push(`lut=a='val*${px.opacity.toFixed(4)}'`)
+          const isLast = i === activeOverlays.length - 1 && !hasText
+          const outLabel = isLast ? '[vout]' : `[v${i + 1}]`
+          filterParts.push(`[${i + 1}:v]${ovFilters.join(',')}[ov${i}]`)
+          filterParts.push(`${currentLabel}[ov${i}]overlay=${px.x}:${px.y}${outLabel}`)
+          currentLabel = outLabel
+        })
+
+        if (hasText) {
+          const txtIdx = activeOverlays.length + 1
+          filterParts.push(`[${txtIdx}:v]format=rgba[txt]`)
+          filterParts.push(`${currentLabel}[txt]overlay=0:0[vout]`)
         }
 
         args.push('-filter_complex', filterParts.join(';'))
@@ -410,7 +387,7 @@ export class Editor {
       if (this.muteAudio) args.push('-an')
 
       // Use stream copy when no video effects are applied (much faster than re-encoding)
-      const needsVideoRecode = vfFilters.length > 0 || hasOverlay || hasText
+      const needsVideoRecode = vfFilters.length > 0 || activeOverlays.length > 0 || hasText
       if (needsVideoRecode) {
         args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23')
       } else {
@@ -458,8 +435,8 @@ export class Editor {
 
       await ff.deleteFile(inputName)
       await ff.deleteFile(outputName)
-      if (hasOverlay) await ff.deleteFile('overlay.png')
-      if (hasText)    await ff.deleteFile('text-overlay.png')
+      for (let i = 0; i < activeOverlays.length; i++) await ff.deleteFile(`overlay-${i}.png`)
+      if (hasText) await ff.deleteFile('text-overlay.png')
     } catch (err) {
       console.error(err)
       alert('Export failed. See console for details.')
@@ -495,6 +472,46 @@ export class Editor {
     if (this.flipH) filters.push('hflip')
     if (this.flipV) filters.push('vflip')
     return filters
+  }
+
+  private _addOverlay(file: File): void {
+    const ov = new ImageOverlay(el('preview-area'), this.videoEl)
+    ov.load(file)
+    this.overlays.push(ov)
+    this._renderOverlayLayers()
+  }
+
+  private _removeOverlay(idx: number): void {
+    this.overlays[idx]?.destroy()
+    this.overlays.splice(idx, 1)
+    this._renderOverlayLayers()
+  }
+
+  private _renderOverlayLayers(): void {
+    const container = el('overlay-layers')
+    container.innerHTML = ''
+    this.overlays.forEach((ov, idx) => {
+      const row = document.createElement('div')
+      row.className = 'overlay-layer'
+
+      const name = document.createElement('span')
+      name.className = 'overlay-layer-name'
+      name.textContent = ov.file?.name ?? `Layer ${idx + 1}`
+
+      const range = document.createElement('input')
+      range.type = 'range'; range.min = '0'; range.max = '100'; range.step = '1'
+      range.value = String(Math.round(ov.currentOpacity * 100))
+      range.className = 'overlay-layer-opacity'
+      range.addEventListener('input', () => ov.setOpacity(parseInt(range.value) / 100))
+
+      const removeBtn = document.createElement('button')
+      removeBtn.className = 'preset-btn danger'
+      removeBtn.textContent = '✕'
+      removeBtn.addEventListener('click', () => this._removeOverlay(idx))
+
+      row.append(name, range, removeBtn)
+      container.appendChild(row)
+    })
   }
 
   private _showProcessing(label: string, indeterminate = false): void {
