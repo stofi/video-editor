@@ -7,7 +7,7 @@ import { CropOverlay, type AspectPreset } from './crop.js'
 import { ImageOverlay } from './overlay.js'
 import { fetchFile } from '@ffmpeg/util'
 
-type Tool = 'trim' | 'crop' | 'rotate' | 'speed' | 'mute-audio' | 'overlay'
+type Tool = 'trim' | 'crop' | 'rotate' | 'color' | 'speed' | 'mute-audio' | 'overlay'
 type Rotation = 0 | 90 | 180 | 270
 
 function el<T extends HTMLElement>(id: string): T {
@@ -33,6 +33,9 @@ export class Editor {
   private rotation: Rotation = 0
   private flipH = false
   private flipV = false
+  private brightness = 0
+  private contrast = 1
+  private saturation = 1
 
   private readonly crop = new CropOverlay(
     el('preview-area'),
@@ -67,7 +70,9 @@ export class Editor {
     this.videoEl.src = this._objectURL
 
     this.rotation = 0; this.flipH = false; this.flipV = false
+    this.brightness = 0; this.contrast = 1; this.saturation = 1
     this._updateVideoTransform()
+    this._updateVideoFilter()
 
     await new Promise<void>((res) => { this.videoEl.onloadedmetadata = () => res() })
     this.trimStart = 0
@@ -175,6 +180,33 @@ export class Editor {
       this._updateVideoTransform()
     })
 
+    // Color sliders
+    const brightnessSlider = el<HTMLInputElement>('color-brightness')
+    const contrastSlider   = el<HTMLInputElement>('color-contrast')
+    const saturationSlider = el<HTMLInputElement>('color-saturation')
+    const brightnessVal = el('color-brightness-value')
+    const contrastVal   = el('color-contrast-value')
+    const saturationVal = el('color-saturation-value')
+    const updateColor = () => {
+      this.brightness = parseFloat(brightnessSlider.value)
+      this.contrast   = parseFloat(contrastSlider.value)
+      this.saturation = parseFloat(saturationSlider.value)
+      brightnessVal.textContent = brightnessSlider.value
+      contrastVal.textContent   = contrastSlider.value
+      saturationVal.textContent = saturationSlider.value
+      this._updateVideoFilter()
+    }
+    brightnessSlider.addEventListener('input', updateColor)
+    contrastSlider.addEventListener('input', updateColor)
+    saturationSlider.addEventListener('input', updateColor)
+    el('btn-color-reset').addEventListener('click', () => {
+      this.brightness = 0; this.contrast = 1; this.saturation = 1
+      brightnessSlider.value = '0'; brightnessVal.textContent = '0'
+      contrastSlider.value   = '1'; contrastVal.textContent   = '1'
+      saturationSlider.value = '1'; saturationVal.textContent = '1'
+      this._updateVideoFilter()
+    })
+
     // Overlay file picker
     const overlayInput = el<HTMLInputElement>('overlay-input')
     overlayInput.addEventListener('change', () => {
@@ -220,6 +252,8 @@ export class Editor {
 
     if (tool === 'rotate') {
       el('panel-rotate').hidden = false
+    } else if (tool === 'color') {
+      el('panel-color').hidden = false
     } else if (tool === 'speed') {
       el('panel-speed').hidden = false
     } else if (tool === 'mute-audio') {
@@ -279,6 +313,7 @@ export class Editor {
         vfFilters.push(`crop=${c.w}:${c.h}:${c.x}:${c.y}`)
       }
       vfFilters.push(...this._buildRotateFlipFilters())
+      vfFilters.push(...this._buildColorFilters())
       if (this.speed !== 1) {
         vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
       }
@@ -348,6 +383,19 @@ export class Editor {
     const sx = this.flipH ? -1 : 1
     const sy = this.flipV ? -1 : 1
     this.videoEl.style.transform = `rotate(${this.rotation}deg) scaleX(${sx}) scaleY(${sy})`
+  }
+
+  private _updateVideoFilter(): void {
+    const b = 1 + this.brightness
+    const c = this.contrast
+    const s = this.saturation
+    this.videoEl.style.filter =
+      b === 1 && c === 1 && s === 1 ? '' : `brightness(${b}) contrast(${c}) saturate(${s})`
+  }
+
+  private _buildColorFilters(): string[] {
+    if (this.brightness === 0 && this.contrast === 1 && this.saturation === 1) return []
+    return [`eq=brightness=${this.brightness.toFixed(3)}:contrast=${this.contrast.toFixed(3)}:saturation=${this.saturation.toFixed(3)}`]
   }
 
   private _buildRotateFlipFilters(): string[] {
