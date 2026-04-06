@@ -37,8 +37,10 @@ export class Editor {
 
   async load(file) {
     this.file = file
-    const url = URL.createObjectURL(file)
-    this.videoEl.src = url
+    // Revoke previous blob URL to avoid memory leak
+    if (this._objectURL) URL.revokeObjectURL(this._objectURL)
+    this._objectURL = URL.createObjectURL(file)
+    this.videoEl.src = this._objectURL
 
     await new Promise((res) => { this.videoEl.onloadedmetadata = res })
     this.trimStart = 0
@@ -53,6 +55,8 @@ export class Editor {
   async _extractWaveform(file) {
     const arrayBuffer = await file.arrayBuffer()
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+    // Mobile browsers may start AudioContext in suspended state
+    if (audioCtx.state === 'suspended') await audioCtx.resume()
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
     this.timeline.drawWaveform(audioBuffer)
     audioCtx.close()
@@ -70,7 +74,7 @@ export class Editor {
         if (this.videoEl.currentTime < this.trimStart || this.videoEl.currentTime >= this.trimEnd) {
           this.videoEl.currentTime = this.trimStart
         }
-        this.videoEl.play()
+        this.videoEl.play().catch(() => {/* interrupted — ignore */})
       } else {
         this.videoEl.pause()
       }
@@ -189,10 +193,19 @@ export class Editor {
       const blob = new Blob([data.buffer], { type: 'video/mp4' })
       const url  = URL.createObjectURL(blob)
 
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
-      a.click()
+      // Use navigator.share on mobile if available, fall back to anchor download
+      if (navigator.canShare?.({ files: [new File([blob], 'video.mp4', { type: 'video/mp4' })] })) {
+        const shareFile = new File([blob], 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' })
+        await navigator.share({ files: [shareFile] }).catch(() => {/* dismissed */})
+      } else {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
+        // Append to DOM required for Safari iOS
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      }
 
       // Cleanup
       await ff.deleteFile(inputName)

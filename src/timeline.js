@@ -94,8 +94,10 @@ export class Timeline {
   _bindHandle(el, which) {
     let startX = 0
     let startPct = 0
+    let dragging = false
 
     const onStart = (clientX) => {
+      dragging = true
       startX = clientX
       startPct = which === 'start'
         ? (this.trimStart / this.duration)
@@ -103,7 +105,7 @@ export class Timeline {
     }
 
     const onMove = (clientX) => {
-      if (!this.duration) return
+      if (!dragging || !this.duration) return
       const rect = this.wrap.getBoundingClientRect()
       const dx = clientX - startX
       const dpct = dx / rect.width
@@ -121,12 +123,17 @@ export class Timeline {
       this.onTrimChange?.(this.trimStart, this.trimEnd)
     }
 
+    const onEnd = () => { dragging = false }
+
     // Touch
     el.addEventListener('touchstart', (e) => { e.preventDefault(); onStart(e.touches[0].clientX) }, { passive: false })
     window.addEventListener('touchmove', (e) => { if (e.touches.length === 1) onMove(e.touches[0].clientX) }, { passive: true })
+    window.addEventListener('touchend', onEnd, { passive: true })
+    window.addEventListener('touchcancel', onEnd, { passive: true })
 
     // Mouse
     el.addEventListener('mousedown', (e) => { e.preventDefault(); onStart(e.clientX) })
-    window.addEventListener('mousemove', (e) => { if (e.buttons === 1) onMove(e.clientX) })
+    window.addEventListener('mousemove', (e) => { onMove(e.clientX) })
+    window.addEventListener('mouseup', onEnd)
   }
 }
