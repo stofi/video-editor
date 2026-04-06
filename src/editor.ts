@@ -4,9 +4,10 @@
 import { getFFmpeg } from './ffmpeg.js'
 import { Timeline } from './timeline.js'
 import { CropOverlay, type AspectPreset } from './crop.js'
+import { ImageOverlay } from './overlay.js'
 import { fetchFile } from '@ffmpeg/util'
 
-type Tool = 'trim' | 'crop' | 'speed' | 'mute-audio'
+type Tool = 'trim' | 'crop' | 'speed' | 'mute-audio' | 'overlay'
 
 function el<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id)
@@ -18,11 +19,11 @@ export class Editor {
   private file: File | null = null
   private _objectURL: string | null = null
 
-  private readonly videoEl     = el<HTMLVideoElement>('preview-video')
-  private readonly overlay     = el('processing-overlay')
-  private readonly overlayLabel = el('processing-label')
-  private readonly progressBar = el('progress-bar')
-  private readonly timeDisplay = el('time-display')
+  private readonly videoEl        = el<HTMLVideoElement>('preview-video')
+  private readonly processingEl   = el('processing-overlay')
+  private readonly processingLabel = el('processing-label')
+  private readonly progressBar    = el('progress-bar')
+  private readonly timeDisplay    = el('time-display')
 
   private speed = 1
   private muteAudio = false
@@ -30,6 +31,11 @@ export class Editor {
   private trimEnd = 0
 
   private readonly crop = new CropOverlay(
+    el('preview-area'),
+    el<HTMLVideoElement>('preview-video'),
+  )
+
+  private readonly imgOverlay = new ImageOverlay(
     el('preview-area'),
     el<HTMLVideoElement>('preview-video'),
   )
@@ -117,6 +123,7 @@ export class Editor {
       })
     })
 
+    // Crop presets
     document.querySelectorAll<HTMLElement>('.preset-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         document.querySelectorAll<HTMLElement>('.preset-btn').forEach((b) => b.classList.remove('active'))
@@ -125,12 +132,41 @@ export class Editor {
       })
     })
 
+    // Speed slider
     const speedSlider = el<HTMLInputElement>('speed-slider')
     const speedValue  = el('speed-value')
     speedSlider.addEventListener('input', () => {
       this.speed = parseFloat(speedSlider.value)
       speedValue.textContent = `${this.speed}×`
       this.videoEl.playbackRate = this.speed
+    })
+
+    // Overlay file picker
+    const overlayInput = el<HTMLInputElement>('overlay-input')
+    overlayInput.addEventListener('change', () => {
+      const file = overlayInput.files?.[0]
+      if (file) {
+        this.imgOverlay.load(file)
+        el('btn-overlay-remove').hidden = false
+      }
+      overlayInput.value = ''  // reset so same file can be re-picked
+    })
+
+    // Opacity slider
+    const opacitySlider = el<HTMLInputElement>('overlay-opacity')
+    const opacityValue  = el('overlay-opacity-value')
+    opacitySlider.addEventListener('input', () => {
+      const v = parseInt(opacitySlider.value) / 100
+      this.imgOverlay.setOpacity(v)
+      opacityValue.textContent = `${opacitySlider.value}%`
+    })
+
+    // Remove overlay
+    el('btn-overlay-remove').addEventListener('click', () => {
+      this.imgOverlay.unload()
+      el('btn-overlay-remove').hidden = true
+      opacitySlider.value = '100'
+      opacityValue.textContent = '100%'
     })
   }
 
@@ -154,6 +190,10 @@ export class Editor {
       this.muteAudio = !this.muteAudio
       const muteBtn = document.querySelector<HTMLElement>('[data-tool="mute-audio"]')
       if (muteBtn) muteBtn.style.color = this.muteAudio ? 'var(--danger)' : ''
+    } else if (tool === 'overlay') {
+      el('panel-overlay').hidden = false
+      // Auto-open file picker if no image loaded yet
+      if (!this.imgOverlay.visible) el<HTMLInputElement>('overlay-input').click()
     }
   }
 
@@ -184,28 +224,52 @@ export class Editor {
       const inputName = 'input' + this.file.name.slice(this.file.name.lastIndexOf('.'))
       const outputName = 'output.mp4'
       const outputFilename = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
+      const hasOverlay = this.imgOverlay.visible && this.imgOverlay.file !== null
 
       await ff.writeFile(inputName, await fetchFile(this.file))
+      if (hasOverlay) {
+        await ff.writeFile('overlay.png', await fetchFile(this.imgOverlay.file!))
+      }
 
       const args = ['-i', inputName]
+      if (hasOverlay) args.push('-i', 'overlay.png')
 
       args.push('-ss', this.trimStart.toFixed(3), '-t', (this.trimEnd - this.trimStart).toFixed(3))
 
-      // Build video filter chain
+      // Video filter chain (crop → speed)
       const vfFilters: string[] = []
       if (this.crop.visible) {
-        const { x, y, w, h } = this.crop.toPixels()
-        vfFilters.push(`crop=${w}:${h}:${x}:${y}`)
+        const c = this.crop.toPixels()
+        vfFilters.push(`crop=${c.w}:${c.h}:${c.x}:${c.y}`)
       }
       if (this.speed !== 1) {
         vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
       }
-      if (vfFilters.length > 0) args.push('-vf', vfFilters.join(','))
 
+      if (hasOverlay) {
+        // Use filter_complex to composite overlay onto the (optionally filtered) video
+        const ov = this.imgOverlay.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
+        const filterParts: string[] = []
+        if (vfFilters.length > 0) {
+          filterParts.push(`[0:v]${vfFilters.join(',')}[base]`)
+        }
+        // Scale overlay; use lut to scale alpha for opacity < 1 (preserves PNG transparency)
+        const ovFilters = [`scale=${ov.w}:${ov.h}`, 'format=rgba']
+        if (ov.opacity < 1) ovFilters.push(`lut=a='val*${ov.opacity.toFixed(4)}'`)
+        filterParts.push(`[1:v]${ovFilters.join(',')}[ov]`)
+        const base = vfFilters.length > 0 ? '[base]' : '[0:v]'
+        filterParts.push(`${base}[ov]overlay=${ov.x}:${ov.y}[vout]`)
+        args.push('-filter_complex', filterParts.join(';'))
+        args.push('-map', '[vout]')
+        if (!this.muteAudio) args.push('-map', '0:a?')
+      } else {
+        if (vfFilters.length > 0) args.push('-vf', vfFilters.join(','))
+      }
+
+      // Audio
       if (this.speed !== 1 && !this.muteAudio) {
         args.push('-af', buildAtempo(this.speed).map((v) => `atempo=${v}`).join(','))
       }
-
       if (this.muteAudio) args.push('-an')
 
       args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23')
@@ -216,7 +280,6 @@ export class Editor {
 
       const raw = await ff.readFile(outputName)
       if (!(raw instanceof Uint8Array)) throw new Error('Expected binary output from FFmpeg')
-      // Copy into a plain ArrayBuffer — FFmpeg may return a SharedArrayBuffer
       const blob = new Blob([new Uint8Array(raw)], { type: 'video/mp4' })
 
       const shareFile = new File([blob], outputFilename, { type: 'video/mp4' })
@@ -235,6 +298,7 @@ export class Editor {
 
       await ff.deleteFile(inputName)
       await ff.deleteFile(outputName)
+      if (hasOverlay) await ff.deleteFile('overlay.png')
     } catch (err) {
       console.error(err)
       alert('Export failed. See console for details.')
@@ -244,13 +308,13 @@ export class Editor {
   }
 
   private _showProcessing(label: string): void {
-    this.overlayLabel.textContent = label
+    this.processingLabel.textContent = label
     this.progressBar.style.width = '0%'
-    this.overlay.hidden = false
+    this.processingEl.hidden = false
   }
 
   private _hideProcessing(): void {
-    this.overlay.hidden = true
+    this.processingEl.hidden = true
   }
 
   private _updateTimeDisplay(): void {
