@@ -107,6 +107,19 @@
 
         <!-- Tool panels -->
         <div id="tool-panels">
+          <div id="panel-trim" class="tool-panel" hidden>
+            <div class="trim-inputs">
+              <label>
+                Start (s)
+                <input type="number" id="trim-start-input" min="0" step="0.1" value="0" inputmode="decimal" />
+              </label>
+              <label>
+                End (s)
+                <input type="number" id="trim-end-input" min="0" step="0.1" value="0" inputmode="decimal" />
+              </label>
+            </div>
+            <span id="trim-dur-display" class="trim-dur">Clip: 0:00.0</span>
+          </div>
           <div id="panel-overlay" class="tool-panel" hidden>
             <input type="file" id="overlay-input" accept="image/*" style="display:none" />
             <button class="preset-btn" onclick="document.getElementById('overlay-input').click()">Choose image</button>

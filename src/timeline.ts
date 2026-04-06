@@ -54,6 +54,13 @@ export class Timeline {
     this._render()
   }
 
+  setTrim(start: number, end: number): void {
+    this.trimStart = Math.max(0, Math.min(start, this.duration))
+    this.trimEnd   = Math.max(this.trimStart + 0.1, Math.min(end, this.duration))
+    this._render()
+    this.onTrimChange?.(this.trimStart, this.trimEnd)
+  }
+
   setPlayhead(currentTime: number): void {
     if (!this.duration) return
     const pct = (currentTime / this.duration) * 100

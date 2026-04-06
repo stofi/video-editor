@@ -26,6 +26,9 @@ export class Editor {
   private readonly processingLabel = el('processing-label')
   private readonly progressBar    = el('progress-bar')
   private readonly timeDisplay    = el('time-display')
+  private readonly trimStartInput  = el<HTMLInputElement>('trim-start-input')
+  private readonly trimEndInput    = el<HTMLInputElement>('trim-end-input')
+  private readonly trimDurDisplay  = el('trim-dur-display')
 
   private speed = 1
   private muteAudio = false
@@ -60,7 +63,7 @@ export class Editor {
     startHandle: el('trim-start'),
     endHandle:   el('trim-end'),
     playhead:    el('playhead'),
-    onTrimChange: (s, e) => { this.trimStart = s; this.trimEnd = e },
+    onTrimChange: (s, e) => { this.trimStart = s; this.trimEnd = e; this._updateTrimInputs() },
   })
 
   constructor() {
@@ -84,6 +87,9 @@ export class Editor {
     this.trimStart = 0
     this.trimEnd = this.videoEl.duration
     this.timeline.setDuration(this.videoEl.duration)
+    this.trimStartInput.max = this.videoEl.duration.toFixed(1)
+    this.trimEndInput.max   = this.videoEl.duration.toFixed(1)
+    this._updateTrimInputs()
     this._updateTimeDisplay()
 
     this._extractWaveform(file).catch(() => this.timeline.drawFlatWaveform())
@@ -149,6 +155,16 @@ export class Editor {
         btn.classList.add('active')
         this.crop.setPreset(btn.dataset['preset'] as AspectPreset)
       })
+    })
+
+    // Trim inputs
+    this.trimStartInput.addEventListener('change', () => {
+      const v = parseFloat(this.trimStartInput.value)
+      if (!isNaN(v)) this.timeline.setTrim(v, this.trimEnd)
+    })
+    this.trimEndInput.addEventListener('change', () => {
+      const v = parseFloat(this.trimEndInput.value)
+      if (!isNaN(v)) this.timeline.setTrim(this.trimStart, v)
     })
 
     // Speed slider
@@ -269,7 +285,9 @@ export class Editor {
       this.crop.hide()
     }
 
-    if (tool === 'rotate') {
+    if (tool === 'trim') {
+      el('panel-trim').hidden = false
+    } else if (tool === 'rotate') {
       el('panel-rotate').hidden = false
     } else if (tool === 'color') {
       el('panel-color').hidden = false
@@ -471,6 +489,16 @@ export class Editor {
 
   private _hideProcessing(): void {
     this.processingEl.hidden = true
+  }
+
+  private _updateTrimInputs(): void {
+    this.trimStartInput.value = this.trimStart.toFixed(1)
+    this.trimEndInput.value   = this.trimEnd.toFixed(1)
+    const dur  = this.trimEnd - this.trimStart
+    const m    = Math.floor(dur / 60)
+    const sNum = dur % 60
+    const sStr = `${Math.floor(sNum).toString().padStart(2, '0')}.${(sNum % 1).toFixed(1).slice(2)}`
+    this.trimDurDisplay.textContent = `Clip: ${m}:${sStr}`
   }
 
   private _updateTimeDisplay(): void {
