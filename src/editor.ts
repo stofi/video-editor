@@ -7,7 +7,8 @@ import { CropOverlay, type AspectPreset } from './crop.js'
 import { ImageOverlay } from './overlay.js'
 import { fetchFile } from '@ffmpeg/util'
 
-type Tool = 'trim' | 'crop' | 'speed' | 'mute-audio' | 'overlay'
+type Tool = 'trim' | 'crop' | 'rotate' | 'speed' | 'mute-audio' | 'overlay'
+type Rotation = 0 | 90 | 180 | 270
 
 function el<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id)
@@ -29,6 +30,9 @@ export class Editor {
   private muteAudio = false
   private trimStart = 0
   private trimEnd = 0
+  private rotation: Rotation = 0
+  private flipH = false
+  private flipV = false
 
   private readonly crop = new CropOverlay(
     el('preview-area'),
@@ -61,6 +65,9 @@ export class Editor {
     if (this._objectURL) URL.revokeObjectURL(this._objectURL)
     this._objectURL = URL.createObjectURL(file)
     this.videoEl.src = this._objectURL
+
+    this.rotation = 0; this.flipH = false; this.flipV = false
+    this._updateVideoTransform()
 
     await new Promise<void>((res) => { this.videoEl.onloadedmetadata = () => res() })
     this.trimStart = 0
@@ -142,6 +149,32 @@ export class Editor {
       this.videoEl.playbackRate = this.speed
     })
 
+    // Rotate / flip buttons
+    el('btn-rotate-ccw').addEventListener('click', () => {
+      this.rotation = ((this.rotation + 270) % 360) as Rotation
+      this._updateVideoTransform()
+    })
+    el('btn-rotate-cw').addEventListener('click', () => {
+      this.rotation = ((this.rotation + 90) % 360) as Rotation
+      this._updateVideoTransform()
+    })
+    el('btn-flip-h').addEventListener('click', () => {
+      this.flipH = !this.flipH
+      el('btn-flip-h').classList.toggle('active', this.flipH)
+      this._updateVideoTransform()
+    })
+    el('btn-flip-v').addEventListener('click', () => {
+      this.flipV = !this.flipV
+      el('btn-flip-v').classList.toggle('active', this.flipV)
+      this._updateVideoTransform()
+    })
+    el('btn-rotate-reset').addEventListener('click', () => {
+      this.rotation = 0; this.flipH = false; this.flipV = false
+      el('btn-flip-h').classList.remove('active')
+      el('btn-flip-v').classList.remove('active')
+      this._updateVideoTransform()
+    })
+
     // Overlay file picker
     const overlayInput = el<HTMLInputElement>('overlay-input')
     overlayInput.addEventListener('change', () => {
@@ -185,7 +218,9 @@ export class Editor {
       this.crop.hide()
     }
 
-    if (tool === 'speed') {
+    if (tool === 'rotate') {
+      el('panel-rotate').hidden = false
+    } else if (tool === 'speed') {
       el('panel-speed').hidden = false
     } else if (tool === 'mute-audio') {
       this.muteAudio = !this.muteAudio
@@ -243,6 +278,7 @@ export class Editor {
         const c = this.crop.toPixels()
         vfFilters.push(`crop=${c.w}:${c.h}:${c.x}:${c.y}`)
       }
+      vfFilters.push(...this._buildRotateFlipFilters())
       if (this.speed !== 1) {
         vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
       }
@@ -306,6 +342,22 @@ export class Editor {
     } finally {
       this._hideProcessing()
     }
+  }
+
+  private _updateVideoTransform(): void {
+    const sx = this.flipH ? -1 : 1
+    const sy = this.flipV ? -1 : 1
+    this.videoEl.style.transform = `rotate(${this.rotation}deg) scaleX(${sx}) scaleY(${sy})`
+  }
+
+  private _buildRotateFlipFilters(): string[] {
+    const filters: string[] = []
+    if (this.rotation === 90)       filters.push('transpose=1')
+    else if (this.rotation === 180) { filters.push('vflip'); filters.push('hflip') }
+    else if (this.rotation === 270) filters.push('transpose=2')
+    if (this.flipH) filters.push('hflip')
+    if (this.flipV) filters.push('vflip')
+    return filters
   }
 
   private _showProcessing(label: string): void {
