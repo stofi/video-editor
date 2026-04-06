@@ -350,11 +350,15 @@ export class Editor {
         await ff.writeFile('text-overlay.png', new Uint8Array(await pngBlob.arrayBuffer()))
       }
 
-      const args = ['-i', inputName]
+      // Input seeking: place -ss BEFORE -i so FFmpeg fast-seeks to the nearest
+      // keyframe rather than decoding the entire video from the start.
+      const args: string[] = []
+      if (this.trimStart > 0) args.push('-ss', this.trimStart.toFixed(3))
+      args.push('-i', inputName)
       if (hasOverlay) args.push('-i', 'overlay.png')
       if (hasText)    args.push('-i', 'text-overlay.png')
-
-      args.push('-ss', this.trimStart.toFixed(3), '-t', (this.trimEnd - this.trimStart).toFixed(3))
+      args.push('-t', (this.trimEnd - this.trimStart).toFixed(3))
+      if (this.trimStart > 0) args.push('-avoid_negative_ts', 'make_zero')
 
       // Video filter chain: crop → rotate/flip → color → speed
       const vfFilters: string[] = []
@@ -405,8 +409,16 @@ export class Editor {
       }
       if (this.muteAudio) args.push('-an')
 
-      args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23')
-      if (!this.muteAudio) args.push('-c:a', 'aac')
+      // Use stream copy when no video effects are applied (much faster than re-encoding)
+      const needsVideoRecode = vfFilters.length > 0 || hasOverlay || hasText
+      if (needsVideoRecode) {
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23')
+      } else {
+        args.push('-c:v', 'copy')
+      }
+      if (!this.muteAudio) {
+        args.push('-c:a', this.speed !== 1 ? 'aac' : 'copy')
+      }
       args.push(outputName)
 
       const onProgress = ({ progress }: { progress: number }): void => {
@@ -415,12 +427,17 @@ export class Editor {
         this.processingLabel.textContent = `Encoding… ${pct}%`
       }
       ff.on('progress', onProgress)
+      let exitCode = -1
       try {
-        await ff.exec(args)
+        exitCode = await ff.exec(args)
       } finally {
         ff.off('progress', onProgress)
       }
+      if (exitCode !== 0) {
+        throw new Error(`FFmpeg exited with code ${exitCode}. The video format may not be supported.`)
+      }
 
+      this._showProcessing('Saving…')
       const raw = await ff.readFile(outputName)
       if (!(raw instanceof Uint8Array)) throw new Error('Expected binary output from FFmpeg')
       const blob = new Blob([new Uint8Array(raw)], { type: 'video/mp4' })
@@ -436,7 +453,7 @@ export class Editor {
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
       }
 
       await ff.deleteFile(inputName)
