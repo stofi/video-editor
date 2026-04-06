@@ -295,6 +295,37 @@ html, body {
 .preset-btn.danger { border-color: var(--danger); color: var(--danger); }
 .preset-btn.danger:active { background: color-mix(in srgb, var(--danger) 15%, transparent); }
 
+/* Color panel */
+#panel-color {
+  flex-direction: column;
+  height: auto;
+  padding: 10px 16px;
+  gap: 6px;
+  align-items: stretch;
+}
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.color-row label {
+  width: 90px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.color-val {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: right;
+}
+#panel-color .preset-btn { align-self: flex-end; margin-top: 2px; }
+
 /* PNG image overlay */
 .overlay-wrap {
   position: absolute;

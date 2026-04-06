@@ -122,12 +122,18 @@
             </div>
           </div>
           <div id="panel-color" class="tool-panel" hidden>
-            <label>Brightness: <span id="color-brightness-value">0</span></label>
-            <input type="range" id="color-brightness" min="-0.5" max="0.5" step="0.05" value="0" />
-            <label>Contrast: <span id="color-contrast-value">1</span></label>
-            <input type="range" id="color-contrast" min="0.5" max="2" step="0.05" value="1" />
-            <label>Saturation: <span id="color-saturation-value">1</span></label>
-            <input type="range" id="color-saturation" min="0" max="2" step="0.05" value="1" />
+            <div class="color-row">
+              <label>Brightness <span id="color-brightness-value" class="color-val">0</span></label>
+              <input type="range" id="color-brightness" min="-0.5" max="0.5" step="0.05" value="0" />
+            </div>
+            <div class="color-row">
+              <label>Contrast <span id="color-contrast-value" class="color-val">1</span></label>
+              <input type="range" id="color-contrast" min="0.5" max="2" step="0.05" value="1" />
+            </div>
+            <div class="color-row">
+              <label>Saturation <span id="color-saturation-value" class="color-val">1</span></label>
+              <input type="range" id="color-saturation" min="0" max="2" step="0.05" value="1" />
+            </div>
             <button id="btn-color-reset" class="preset-btn">Reset</button>
           </div>
           <div id="panel-rotate" class="tool-panel" hidden>
