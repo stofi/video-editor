@@ -83,11 +83,30 @@ export class Editor {
     this._updateVideoFilter()
 
     await new Promise<void>((res) => { this.videoEl.onloadedmetadata = () => res() })
+
+    // WebM from MediaRecorder has no duration header → duration starts as Infinity.
+    // Wait up to 2s for a durationchange event that gives us the real value.
+    if (!isFinite(this.videoEl.duration)) {
+      await Promise.race([
+        new Promise<void>((res) => {
+          const onDur = (): void => {
+            if (isFinite(this.videoEl.duration)) {
+              this.videoEl.removeEventListener('durationchange', onDur)
+              res()
+            }
+          }
+          this.videoEl.addEventListener('durationchange', onDur)
+        }),
+        new Promise<void>((res) => setTimeout(res, 2000)),
+      ])
+    }
+
+    const dur = isFinite(this.videoEl.duration) ? this.videoEl.duration : 0
     this.trimStart = 0
-    this.trimEnd = this.videoEl.duration
-    this.timeline.setDuration(this.videoEl.duration)
-    this.trimStartInput.max = this.videoEl.duration.toFixed(1)
-    this.trimEndInput.max   = this.videoEl.duration.toFixed(1)
+    this.trimEnd = dur
+    this.timeline.setDuration(dur)
+    this.trimStartInput.max = dur.toFixed(1)
+    this.trimEndInput.max   = dur.toFixed(1)
     this._updateTrimInputs()
     this._updateTimeDisplay()
 
@@ -604,6 +623,7 @@ export class Editor {
 
   private _updateTimeDisplay(): void {
     const fmt = (s: number): string => {
+      if (!isFinite(s)) return '--:--'
       const m = Math.floor(s / 60)
       const sec = Math.floor(s % 60).toString().padStart(2, '0')
       return `${m}:${sec}`

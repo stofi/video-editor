@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import path from 'path'
 
-const FIXTURE = path.resolve(import.meta.dirname, 'fixtures/test.mp4')
+const FIXTURE = path.resolve(import.meta.dirname, 'fixtures/test.webm')
 
 test.describe('Import screen', () => {
   test.beforeEach(async ({ page }) => {
@@ -32,10 +32,7 @@ test.describe('Import screen', () => {
 test.describe('Editor UI structure', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
-    // Use Playwright's native file upload — triggers the real change event
     await page.locator('#file-input').setInputFiles(FIXTURE)
-    // showEditor() runs synchronously before video decode, so active class
-    // appears immediately even if the video is invalid/minimal
     await expect(page.locator('#editor-screen')).toHaveClass(/\bactive\b/, { timeout: 3000 })
   })
 
@@ -72,5 +69,51 @@ test.describe('Editor UI structure', () => {
     await expect(page.locator('#panel-speed')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('#panel-speed')).not.toBeVisible()
+  })
+})
+
+test.describe('Video loading', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await page.locator('#file-input').setInputFiles(FIXTURE)
+    await expect(page.locator('#editor-screen')).toHaveClass(/\bactive\b/, { timeout: 3000 })
+    // Wait for video metadata — real fixture has valid frames so loadedmetadata fires
+    await page.waitForFunction(
+      () => (document.getElementById('preview-video') as HTMLVideoElement).readyState >= 1,
+      { timeout: 5000 }
+    )
+  })
+
+  test('video has non-zero duration after load', async ({ page }) => {
+    const duration = await page.evaluate(
+      () => (document.getElementById('preview-video') as HTMLVideoElement).duration
+    )
+    expect(duration).toBeGreaterThan(0)
+  })
+
+  test('time display is in a valid format after load', async ({ page }) => {
+    const text = await page.locator('#time-display').textContent()
+    // Must be "X:XX / X:XX" or "X:XX / --:--" — never "Infinity:NaN"
+    expect(text).toMatch(/^\d+:\d{2} \/ (\d+:\d{2}|--:--)$/)
+  })
+
+  test('trim end input contains a valid number after load', async ({ page }) => {
+    await page.locator('[data-tool="trim"]').click()
+    const endVal = await page.locator('#trim-end-input').inputValue()
+    // Value is a decimal like "1.0" or "0.0" — never empty or "Infinity"
+    expect(endVal).toMatch(/^\d+\.\d+$/)
+  })
+
+  test('thumbnail canvas is non-empty after thumbnails render', async ({ page }) => {
+    // Wait for at least one thumbnail to be drawn (non-zero pixel in the canvas)
+    await page.waitForFunction(() => {
+      const canvas = document.getElementById('waveform-canvas') as HTMLCanvasElement
+      if (!canvas) return false
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return false
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      // Any non-zero pixel means something was drawn
+      return data.some(v => v > 0)
+    }, { timeout: 15000 })
   })
 })
