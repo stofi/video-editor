@@ -10,16 +10,12 @@ let loadPromise: Promise<FFmpeg> | null = null
 
 const BASE_URL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
 
-export async function getFFmpeg(onProgress?: (progress: number) => void): Promise<FFmpeg> {
+export async function getFFmpeg(): Promise<FFmpeg> {
   if (instance) return instance
 
   if (!loadPromise) {
     loadPromise = (async () => {
       const ff = new FFmpeg()
-
-      if (onProgress) {
-        ff.on('progress', ({ progress }) => onProgress(progress))
-      }
 
       ff.on('log', ({ message }) => {
         if (import.meta.env.DEV) console.debug('[ffmpeg]', message)

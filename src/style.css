@@ -114,6 +114,15 @@ html, body {
   height: 100%; width: 0%; background: var(--accent); border-radius: 2px;
   transition: width 0.1s;
 }
+@keyframes progress-slide {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(350%); }
+}
+#progress-bar.indeterminate {
+  width: 40% !important;
+  transition: none !important;
+  animation: progress-slide 1.3s linear infinite;
+}
 
 /* Playback controls */
 #playback-controls {
@@ -396,15 +405,25 @@ html, body {
 }
 .overlay-resize-handle {
   position: absolute;
-  bottom: -6px;
-  right: -6px;
-  width: 18px;
-  height: 18px;
+  bottom: -10px;
+  right: -10px;
+  width: 28px;
+  height: 28px;
   background: #fff;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: se-resize;
   touch-action: none;
   border: 2px solid rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.overlay-resize-handle::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(0,0,0,0.4);
+  border-bottom: 2px solid rgba(0,0,0,0.4);
 }
 
 /* Crop overlay */

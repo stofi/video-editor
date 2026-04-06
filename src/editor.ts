@@ -297,13 +297,11 @@ export class Editor {
   private async _export(): Promise<void> {
     if (!this.file) return
 
-    this._showProcessing('Loading FFmpeg…')
+    this._showProcessing('Loading FFmpeg…', true)
 
     let ff
     try {
-      ff = await getFFmpeg((progress) => {
-        this.progressBar.style.width = `${Math.round(progress * 100)}%`
-      })
+      ff = await getFFmpeg()
     } catch (err) {
       console.error(err)
       this._hideProcessing()
@@ -311,7 +309,7 @@ export class Editor {
       return
     }
 
-    this._showProcessing('Processing…')
+    this._showProcessing('Encoding…')
 
     try {
       const inputName = 'input' + this.file.name.slice(this.file.name.lastIndexOf('.'))
@@ -393,7 +391,17 @@ export class Editor {
       if (!this.muteAudio) args.push('-c:a', 'aac')
       args.push(outputName)
 
-      await ff.exec(args)
+      const onProgress = ({ progress }: { progress: number }): void => {
+        const pct = Math.min(100, Math.round(progress * 100))
+        this.progressBar.style.width = `${pct}%`
+        this.processingLabel.textContent = `Encoding… ${pct}%`
+      }
+      ff.on('progress', onProgress)
+      try {
+        await ff.exec(args)
+      } finally {
+        ff.off('progress', onProgress)
+      }
 
       const raw = await ff.readFile(outputName)
       if (!(raw instanceof Uint8Array)) throw new Error('Expected binary output from FFmpeg')
@@ -454,9 +462,10 @@ export class Editor {
     return filters
   }
 
-  private _showProcessing(label: string): void {
+  private _showProcessing(label: string, indeterminate = false): void {
     this.processingLabel.textContent = label
-    this.progressBar.style.width = '0%'
+    this.progressBar.style.width = indeterminate ? '' : '0%'
+    this.progressBar.classList.toggle('indeterminate', indeterminate)
     this.processingEl.hidden = false
   }
 

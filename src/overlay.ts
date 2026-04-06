@@ -170,7 +170,8 @@ export class ImageOverlay {
         this.x = this.startX + dx
         this.y = this.startY + dy
       } else {
-        this.scale = Math.max(0.05, Math.min(1, this.startScale + dx))
+        // Diagonal drag: average of both axes so moving down-right naturally scales up
+        this.scale = Math.max(0.05, Math.min(1, this.startScale + (dx + dy) / 2))
       }
       this._render()
       this.onChange?.()
