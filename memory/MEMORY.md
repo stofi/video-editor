@@ -49,6 +49,11 @@ src/
 - AudioContext: call .resume() before decodeAudioData (mobile suspend issue)
 - video.play() rejection: always .catch() — iOS interrupts
 
+## Svelte 5 references
+See `memory/svelte-references.md` for curated list.
+Key pattern for migration: current `editor.ts`/`timeline.ts`/`crop.ts` classes map cleanly
+to `.svelte.ts` reactive modules using `$state`/`$derived` — minimal rewrite needed.
+
 ## Deployment
 - Dockerfile: node:22-alpine build → nginx:alpine serve
 - nginx.conf: COOP/COEP headers, try_files SPA fallback, 1y cache on /assets/

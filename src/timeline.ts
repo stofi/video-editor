@@ -1,5 +1,5 @@
 /**
- * Timeline: waveform canvas + trim handle drag (touch & mouse).
+ * Timeline: waveform canvas + thumbnail strip + trim handle drag (touch & mouse).
  */
 
 type Handle = 'start' | 'end'
@@ -27,6 +27,14 @@ export class Timeline {
   trimStart = 0
   trimEnd = 0
 
+  // Thumbnail strip state
+  private thumbData: ImageData | null = null
+  private thumbGeneration = 0
+
+  // Last drawn waveform — re-composited after thumbnails arrive
+  private lastAudioBuffer: AudioBuffer | null = null
+  private hasWaveform = false
+
   constructor(opts: TimelineOptions) {
     this.wrap = opts.wrap
     this.canvas = opts.canvas
@@ -53,22 +61,124 @@ export class Timeline {
   }
 
   drawWaveform(audioBuffer: AudioBuffer): void {
+    this.lastAudioBuffer = audioBuffer
+    this.hasWaveform = true
+    this._draw()
+  }
+
+  drawFlatWaveform(): void {
+    this.lastAudioBuffer = null
+    this.hasWaveform = false
+    this._draw()
+  }
+
+  /**
+   * Extract evenly-spaced frames from the video and render them as a thumbnail
+   * strip behind the waveform. Runs asynchronously; a generation counter cancels
+   * stale extractions when a new file is loaded.
+   */
+  async drawThumbnails(video: HTMLVideoElement): Promise<void> {
+    if (!this.duration || !video.videoWidth || !video.videoHeight) return
+
+    const myGen = ++this.thumbGeneration
+
+    const { width, height } = this.canvas.getBoundingClientRect()
+    if (!width || !height) return
+
+    const dpr = devicePixelRatio
+    const pw  = Math.round(width  * dpr)
+    const ph  = Math.round(height * dpr)
+
+    // Aim for roughly square thumbnails, minimum 4
+    const count    = Math.max(4, Math.ceil(width / height))
+    const thumbW   = pw / count
+    const vAspect  = video.videoWidth / video.videoHeight
+    const thumbH   = thumbW / vAspect
+    const thumbY   = (ph - thumbH) / 2
+
+    const wasPaused = video.paused
+    const savedTime = video.currentTime
+    if (!wasPaused) video.pause()
+
+    // Draw frames onto a temp canvas so we don't disturb the live canvas
+    const tmp    = document.createElement('canvas')
+    tmp.width    = pw
+    tmp.height   = ph
+    const tmpCtx = tmp.getContext('2d')
+    if (!tmpCtx) return
+
+    for (let i = 0; i < count; i++) {
+      if (myGen !== this.thumbGeneration) break  // cancelled by new file load
+
+      video.currentTime = ((i + 0.5) / count) * this.duration
+      await new Promise<void>((res) => {
+        video.addEventListener('seeked', () => res(), { once: true })
+      })
+
+      if (myGen !== this.thumbGeneration) break
+
+      // 1px gap between frames
+      tmpCtx.drawImage(video, i * thumbW + 1, thumbY, thumbW - 2, thumbH)
+    }
+
+    if (myGen !== this.thumbGeneration) return
+
+    this.thumbData = tmpCtx.getImageData(0, 0, pw, ph)
+
+    // Restore video position
+    video.currentTime = savedTime
+    if (!wasPaused) video.play().catch(() => { /* ignore */ })
+
+    // Re-draw waveform on top of the newly available thumbnails
+    this._draw()
+  }
+
+  private _draw(): void {
     const ctx = this.canvas.getContext('2d')
     if (!ctx) return
 
     const { width, height } = this.canvas.getBoundingClientRect()
-    this.canvas.width = width * devicePixelRatio
-    this.canvas.height = height * devicePixelRatio
+    if (!width || !height) return
+
+    this.canvas.width  = Math.round(width  * devicePixelRatio)
+    this.canvas.height = Math.round(height * devicePixelRatio)
     ctx.scale(devicePixelRatio, devicePixelRatio)
 
+    ctx.clearRect(0, 0, width, height)
+
+    // Thumbnail strip (putImageData ignores the current transform)
+    const thumbFits = this.thumbData
+      && this.thumbData.width  === this.canvas.width
+      && this.thumbData.height === this.canvas.height
+
+    if (thumbFits && this.thumbData) {
+      ctx.putImageData(this.thumbData, 0, 0)
+      // Dark scrim so the waveform stays legible
+      ctx.fillStyle = 'rgba(10, 10, 20, 0.55)'
+      ctx.fillRect(0, 0, width, height)
+    }
+
+    // Waveform
+    if (this.hasWaveform && this.lastAudioBuffer) {
+      this._drawWaveformData(ctx, width, height, this.lastAudioBuffer)
+    } else {
+      this._drawFlatLine(ctx, width, height)
+    }
+  }
+
+  private _drawWaveformData(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    audioBuffer: AudioBuffer,
+  ): void {
     const data = audioBuffer.getChannelData(0)
     const step = Math.ceil(data.length / width)
-    const mid = height / 2
+    const mid  = height / 2
 
-    ctx.clearRect(0, 0, width, height)
     ctx.strokeStyle = '#3b82f6'
-    ctx.lineWidth = 1
-    ctx.globalAlpha = 0.7
+    ctx.lineWidth   = 1
+    ctx.globalAlpha = this.thumbData ? 0.9 : 0.7
 
     for (let i = 0; i < width; i++) {
       let min = 1
@@ -85,18 +195,10 @@ export class Timeline {
     }
   }
 
-  drawFlatWaveform(): void {
-    const ctx = this.canvas.getContext('2d')
-    if (!ctx) return
-
-    const { width, height } = this.canvas.getBoundingClientRect()
-    this.canvas.width = width * devicePixelRatio
-    this.canvas.height = height * devicePixelRatio
-    ctx.scale(devicePixelRatio, devicePixelRatio)
-    ctx.clearRect(0, 0, width, height)
+  private _drawFlatLine(ctx: CanvasRenderingContext2D, width: number, height: number): void {
     ctx.strokeStyle = '#3b82f6'
-    ctx.globalAlpha = 0.4
-    ctx.lineWidth = 1
+    ctx.globalAlpha = this.thumbData ? 0.5 : 0.4
+    ctx.lineWidth   = 1
     ctx.beginPath()
     ctx.moveTo(0, height / 2)
     ctx.lineTo(width, height / 2)

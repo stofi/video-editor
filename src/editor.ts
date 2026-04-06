@@ -69,6 +69,7 @@ export class Editor {
     this._updateTimeDisplay()
 
     this._extractWaveform(file).catch(() => this.timeline.drawFlatWaveform())
+    this.timeline.drawThumbnails(this.videoEl).catch(() => { /* best-effort */ })
   }
 
   private async _extractWaveform(file: File): Promise<void> {
