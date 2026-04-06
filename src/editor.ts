@@ -67,6 +67,7 @@ export class Editor {
     this._bindPlayback()
     this._bindToolbar()
     this._bindExport()
+    this._bindKeyboard()
   }
 
   async load(file: File): Promise<void> {
@@ -282,6 +283,59 @@ export class Editor {
     } else if (tool === 'overlay') {
       el('panel-overlay').hidden = false
     }
+  }
+
+  private _bindKeyboard(): void {
+    document.addEventListener('keydown', (e) => {
+      if (!this.file) return
+      const inInput = (e.target as HTMLElement).tagName === 'INPUT' ||
+                      (e.target as HTMLElement).tagName === 'TEXTAREA'
+
+      // Escape always closes the active panel, even from inputs
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        this._closeActiveTool()
+        return
+      }
+
+      if (inInput) return
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault()
+          el('btn-play').click()
+          break
+        case 'j':
+        case 'J':
+          this.videoEl.currentTime = Math.max(this.trimStart, this.videoEl.currentTime - 5)
+          this.timeline.setPlayhead(this.videoEl.currentTime)
+          this._updateTimeDisplay()
+          break
+        case 'l':
+        case 'L':
+          this.videoEl.currentTime = Math.min(this.trimEnd, this.videoEl.currentTime + 5)
+          this.timeline.setPlayhead(this.videoEl.currentTime)
+          this._updateTimeDisplay()
+          break
+        case 'i':
+        case 'I':
+          this.timeline.setTrim(this.videoEl.currentTime, this.trimEnd)
+          break
+        case 'o':
+        case 'O':
+          this.timeline.setTrim(this.trimStart, this.videoEl.currentTime)
+          break
+      }
+    })
+  }
+
+  private _closeActiveTool(): void {
+    document.querySelectorAll<HTMLElement>('.tool-btn[data-tool]').forEach((b) =>
+      b.classList.remove('active')
+    )
+    document.querySelectorAll<HTMLElement>('.tool-panel').forEach((p) => { p.hidden = true })
+    this.crop.hide()
+    this.textOverlay.hide()
   }
 
   private _bindExport(): void {
