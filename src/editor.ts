@@ -7,6 +7,7 @@ import { CropOverlay, type AspectPreset } from './crop.js'
 import { ImageOverlay } from './overlay.js'
 import { TextOverlay } from './textoverlay.js'
 import { fetchFile } from '@ffmpeg/util'
+import { buildAtempo } from './utils.js'
 
 type Tool = 'trim' | 'crop' | 'rotate' | 'color' | 'speed' | 'mute-audio' | 'overlay' | 'text'
 type Rotation = 0 | 90 | 180 | 270
@@ -618,12 +619,3 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   })
 }
 
-/** Build atempo filter chain — each value must be in [0.5, 2] */
-function buildAtempo(speed: number): number[] {
-  const result: number[] = []
-  let remaining = speed
-  while (remaining > 2) { result.push(2); remaining /= 2 }
-  while (remaining < 0.5) { result.push(0.5); remaining /= 0.5 }
-  result.push(parseFloat(remaining.toFixed(4)))
-  return result
-}

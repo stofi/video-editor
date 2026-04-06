@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 
 export default defineConfig({
@@ -16,5 +17,10 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+  },
+  test: {
+    // Pure function tests — no browser or DOM needed
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 })
