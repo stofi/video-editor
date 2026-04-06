@@ -81,8 +81,9 @@ export class Timeline {
 
   /**
    * Extract evenly-spaced frames from the video and render them as a thumbnail
-   * strip behind the waveform. Runs asynchronously; a generation counter cancels
-   * stale extractions when a new file is loaded.
+   * strip behind the waveform. Renders each frame progressively as it arrives.
+   * A per-seek timeout (2s) prevents slow seeks from stalling the whole strip.
+   * A generation counter cancels stale extractions when a new file is loaded.
    */
   async drawThumbnails(video: HTMLVideoElement): Promise<void> {
     if (!this.duration || !video.videoWidth || !video.videoHeight) return
@@ -96,48 +97,51 @@ export class Timeline {
     const pw  = Math.round(width  * dpr)
     const ph  = Math.round(height * dpr)
 
-    // Aim for roughly square thumbnails, minimum 4
-    const count    = Math.max(4, Math.ceil(width / height))
-    const thumbW   = pw / count
-    const vAspect  = video.videoWidth / video.videoHeight
-    const thumbH   = thumbW / vAspect
-    const thumbY   = (ph - thumbH) / 2
+    // Aim for roughly square thumbnails; cap at 20 to limit seeks on long videos
+    const count   = Math.min(20, Math.max(4, Math.ceil(width / height)))
+    const thumbW  = pw / count
+    const vAspect = video.videoWidth / video.videoHeight
+    const thumbH  = thumbW / vAspect
+    const thumbY  = (ph - thumbH) / 2
 
     const wasPaused = video.paused
     const savedTime = video.currentTime
     if (!wasPaused) video.pause()
 
-    // Draw frames onto a temp canvas so we don't disturb the live canvas
     const tmp    = document.createElement('canvas')
     tmp.width    = pw
     tmp.height   = ph
     const tmpCtx = tmp.getContext('2d')
     if (!tmpCtx) return
 
-    for (let i = 0; i < count; i++) {
-      if (myGen !== this.thumbGeneration) break  // cancelled by new file load
+    const seekTo = (t: number): Promise<void> => {
+      video.currentTime = t
+      return Promise.race([
+        new Promise<void>(res => video.addEventListener('seeked', () => res(), { once: true })),
+        new Promise<void>(res => setTimeout(res, 2000)),
+      ])
+    }
 
-      video.currentTime = ((i + 0.5) / count) * this.duration
-      await new Promise<void>((res) => {
-        video.addEventListener('seeked', () => res(), { once: true })
-      })
+    for (let i = 0; i < count; i++) {
+      if (myGen !== this.thumbGeneration) break
+
+      await seekTo(((i + 0.5) / count) * this.duration)
 
       if (myGen !== this.thumbGeneration) break
 
       // 1px gap between frames
       tmpCtx.drawImage(video, i * thumbW + 1, thumbY, thumbW - 2, thumbH)
+
+      // Progressive: show each frame as it arrives
+      this.thumbData = tmpCtx.getImageData(0, 0, pw, ph)
+      this._draw()
     }
 
     if (myGen !== this.thumbGeneration) return
 
-    this.thumbData = tmpCtx.getImageData(0, 0, pw, ph)
-
     // Restore video position
-    video.currentTime = savedTime
+    await seekTo(savedTime)
     if (!wasPaused) video.play().catch(() => { /* ignore */ })
-
-    // Re-draw waveform on top of the newly available thumbnails
-    this._draw()
   }
 
   private _draw(): void {
