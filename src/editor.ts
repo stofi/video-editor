@@ -3,6 +3,7 @@
  */
 import { getFFmpeg } from './ffmpeg.js'
 import { Timeline } from './timeline.js'
+import { CropOverlay, type AspectPreset } from './crop.js'
 import { fetchFile } from '@ffmpeg/util'
 
 type Tool = 'trim' | 'crop' | 'speed' | 'mute-audio'
@@ -27,6 +28,11 @@ export class Editor {
   private muteAudio = false
   private trimStart = 0
   private trimEnd = 0
+
+  private readonly crop = new CropOverlay(
+    el('preview-area'),
+    el<HTMLVideoElement>('preview-video'),
+  )
 
   private readonly timeline = new Timeline({
     wrap:        el('timeline-wrap'),
@@ -111,6 +117,14 @@ export class Editor {
       })
     })
 
+    document.querySelectorAll<HTMLElement>('.preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll<HTMLElement>('.preset-btn').forEach((b) => b.classList.remove('active'))
+        btn.classList.add('active')
+        this.crop.setPreset(btn.dataset['preset'] as AspectPreset)
+      })
+    })
+
     const speedSlider = el<HTMLInputElement>('speed-slider')
     const speedValue  = el('speed-value')
     speedSlider.addEventListener('input', () => {
@@ -126,6 +140,13 @@ export class Editor {
     )
 
     document.querySelectorAll<HTMLElement>('.tool-panel').forEach((p) => { p.hidden = true })
+
+    if (tool === 'crop') {
+      el('panel-crop').hidden = false
+      this.crop.show()
+    } else {
+      this.crop.hide()
+    }
 
     if (tool === 'speed') {
       el('panel-speed').hidden = false
@@ -170,11 +191,19 @@ export class Editor {
 
       args.push('-ss', this.trimStart.toFixed(3), '-t', (this.trimEnd - this.trimStart).toFixed(3))
 
+      // Build video filter chain
+      const vfFilters: string[] = []
+      if (this.crop.visible) {
+        const { x, y, w, h } = this.crop.toPixels()
+        vfFilters.push(`crop=${w}:${h}:${x}:${y}`)
+      }
       if (this.speed !== 1) {
-        args.push('-vf', `setpts=${(1 / this.speed).toFixed(4)}*PTS`)
-        if (!this.muteAudio) {
-          args.push('-af', buildAtempo(this.speed).map((v) => `atempo=${v}`).join(','))
-        }
+        vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
+      }
+      if (vfFilters.length > 0) args.push('-vf', vfFilters.join(','))
+
+      if (this.speed !== 1 && !this.muteAudio) {
+        args.push('-af', buildAtempo(this.speed).map((v) => `atempo=${v}`).join(','))
       }
 
       if (this.muteAudio) args.push('-an')

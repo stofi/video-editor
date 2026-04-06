@@ -259,6 +259,80 @@ html, body {
   height: 4px;
 }
 
+/* Crop preset buttons */
+.preset-btns {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.preset-btns::-webkit-scrollbar { display: none; }
+.preset-btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.preset-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Crop overlay */
+.crop-wrap {
+  position: absolute;
+  overflow: hidden;  /* clips box-shadow at video bounds */
+  pointer-events: none;
+  z-index: 5;
+}
+.crop-region {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  cursor: move;
+  touch-action: none;
+  pointer-events: all;
+}
+/* Rule-of-thirds grid */
+.crop-region::before,
+.crop-region::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.crop-region::before {
+  border-left:  1px solid rgba(255,255,255,0.25);
+  border-right: 1px solid rgba(255,255,255,0.25);
+  left: 33.33%; right: 33.33%;
+}
+.crop-region::after {
+  border-top:    1px solid rgba(255,255,255,0.25);
+  border-bottom: 1px solid rgba(255,255,255,0.25);
+  top: 33.33%; bottom: 33.33%;
+}
+/* Corner handles */
+.crop-handle {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-color: #fff;
+  border-style: solid;
+  touch-action: none;
+  cursor: nwse-resize;
+}
+.crop-handle[data-corner="nw"] { top: -2px;  left: -2px;  border-width: 3px 0 0 3px; cursor: nw-resize; }
+.crop-handle[data-corner="ne"] { top: -2px;  right: -2px; border-width: 3px 3px 0 0; cursor: ne-resize; }
+.crop-handle[data-corner="sw"] { bottom: -2px; left: -2px;  border-width: 0 0 3px 3px; cursor: sw-resize; }
+.crop-handle[data-corner="se"] { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; cursor: se-resize; }
+
 /* ── Desktop enhancements ────────────────────────── */
 @media (min-width: 768px) {
   .import-zone { padding: 64px 48px; }

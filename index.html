@@ -91,6 +91,15 @@
 
         <!-- Tool panels -->
         <div id="tool-panels">
+          <div id="panel-crop" class="tool-panel" hidden>
+            <div class="preset-btns">
+              <button class="preset-btn active" data-preset="free">Free</button>
+              <button class="preset-btn" data-preset="16:9">16:9</button>
+              <button class="preset-btn" data-preset="9:16">9:16</button>
+              <button class="preset-btn" data-preset="1:1">1:1</button>
+              <button class="preset-btn" data-preset="4:3">4:3</button>
+            </div>
+          </div>
           <div id="panel-speed" class="tool-panel" hidden>
             <label>Speed: <span id="speed-value">1×</span></label>
             <input type="range" id="speed-slider" min="0.25" max="4" step="0.25" value="1" />
