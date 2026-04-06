@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Video Editor</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Import screen -->
+      <div id="import-screen" class="screen active">
+        <div class="import-zone" id="import-zone">
+          <div class="import-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M15 10l-4 4m0 0l-4-4m4 4V3M3 17v1a2 2 0 002 2h14a2 2 0 002-2v-1" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <p class="import-label">Tap to open a video</p>
+          <p class="import-sub">MP4, MOV, WebM — stays in your browser</p>
+          <input type="file" id="file-input" accept="video/*" />
+        </div>
+      </div>
+
+      <!-- Editor screen -->
+      <div id="editor-screen" class="screen">
+        <!-- Preview -->
+        <div id="preview-area">
+          <video id="preview-video" playsinline muted></video>
+          <div id="processing-overlay" hidden>
+            <div class="spinner"></div>
+            <p id="processing-label">Processing…</p>
+            <div id="progress-bar-wrap">
+              <div id="progress-bar"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Playback controls -->
+        <div id="playback-controls">
+          <button id="btn-play" class="icon-btn" aria-label="Play/Pause">
+            <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          </button>
+          <span id="time-display">0:00 / 0:00</span>
+          <button id="btn-mute" class="icon-btn" aria-label="Mute">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+          </button>
+        </div>
+
+        <!-- Timeline -->
+        <div id="timeline-wrap">
+          <div id="timeline" class="timeline">
+            <canvas id="waveform-canvas"></canvas>
+            <div id="trim-region">
+              <div id="trim-start" class="trim-handle" data-handle="start"></div>
+              <div id="trim-end" class="trim-handle" data-handle="end"></div>
+            </div>
+            <div id="playhead"></div>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div id="toolbar">
+          <button class="tool-btn active" data-tool="trim">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <span>Trim</span>
+          </button>
+          <button class="tool-btn" data-tool="crop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14h14M2 6h14"/></svg>
+            <span>Crop</span>
+          </button>
+          <button class="tool-btn" data-tool="speed">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linejoin="round"/></svg>
+            <span>Speed</span>
+          </button>
+          <button class="tool-btn" data-tool="mute-audio">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 9v6h4l5 5V4L13 9H9z"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            <span>Mute</span>
+          </button>
+          <button id="btn-export" class="tool-btn export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            <span>Export</span>
+          </button>
+        </div>
+
+        <!-- Tool panels -->
+        <div id="tool-panels">
+          <div id="panel-speed" class="tool-panel" hidden>
+            <label>Speed: <span id="speed-value">1×</span></label>
+            <input type="range" id="speed-slider" min="0.25" max="4" step="0.25" value="1" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
