@@ -413,7 +413,7 @@ export class Editor {
         activeOverlays.forEach((ov, i) => {
           const px = ov.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
           const ovFilters = [`scale=${px.w}:${px.h}`, 'format=rgba']
-          if (px.opacity < 1) ovFilters.push(`lut=a='val*${px.opacity.toFixed(4)}'`)
+          if (px.opacity < 1) ovFilters.push(`lut=a=val*${px.opacity.toFixed(4)}`)
           const isLast = i === activeOverlays.length - 1 && !hasText
           const outLabel = isLast ? '[vout]' : `[v${i + 1}]`
           filterParts.push(`[${i + 1}:v]${ovFilters.join(',')}[ov${i}]`)
@@ -431,6 +431,8 @@ export class Editor {
         args.push('-map', '[vout]')
         if (!this.muteAudio) args.push('-map', '0:a?')
       } else {
+        // Explicit mapping makes audio optional — avoids errors on video-only inputs
+        args.push('-map', '0:v:0', '-map', '0:a?')
         if (vfFilters.length > 0) args.push('-vf', vfFilters.join(','))
       }
 
@@ -447,25 +449,35 @@ export class Editor {
       } else {
         args.push('-c:v', 'copy')
       }
+      // Always encode audio to AAC — copying non-MP4-native codecs (PCM, FLAC,
+      // Vorbis, etc.) into an MP4 container causes FFmpeg to exit with code 1.
       if (!this.muteAudio) {
-        args.push('-c:a', this.speed !== 1 ? 'aac' : 'copy')
+        args.push('-c:a', 'aac', '-b:a', '128k')
       }
       args.push(outputName)
 
+      // Capture FFmpeg log lines for readable error messages
+      const logs: string[] = []
+      const onLog = ({ message }: { message: string }): void => { logs.push(message) }
       const onProgress = ({ progress }: { progress: number }): void => {
         const pct = Math.min(100, Math.round(progress * 100))
         this.progressBar.style.width = `${pct}%`
         this.processingLabel.textContent = `Encoding… ${pct}%`
       }
+      ff.on('log', onLog)
       ff.on('progress', onProgress)
       let exitCode = -1
       try {
         exitCode = await ff.exec(args)
       } finally {
         ff.off('progress', onProgress)
+        ff.off('log', onLog)
       }
       if (exitCode !== 0) {
-        throw new Error(`FFmpeg exited with code ${exitCode}. The video format may not be supported.`)
+        const errLines = logs.filter(l => /error|invalid|failed|unable/i.test(l)).slice(-6).join('\n')
+        console.error('FFmpeg args:', args)
+        console.error('FFmpeg logs:', logs.join('\n'))
+        throw new Error(`FFmpeg exited with code ${exitCode}${errLines ? `\n\n${errLines}` : ''}`)
       }
 
       this._showProcessing('Saving…')
