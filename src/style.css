@@ -543,6 +543,60 @@ html, body {
 .crop-handle[data-corner="sw"] { bottom: -2px; left: -2px;  border-width: 0 0 3px 3px; cursor: sw-resize; }
 .crop-handle[data-corner="se"] { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; cursor: se-resize; }
 
+/* ── Keyboard shortcuts modal ────────────────────── */
+/* Button only shown on pointer-capable (desktop) devices */
+.shortcuts-btn { display: none; }
+@media (pointer: fine) {
+  .shortcuts-btn { display: flex; }
+}
+
+#shortcuts-dialog {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg2);
+  color: var(--text);
+  padding: 20px 24px;
+  min-width: 260px;
+  outline: none;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+#shortcuts-dialog::backdrop {
+  background: rgba(0,0,0,0.45);
+}
+.shortcuts-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: var(--text);
+}
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.shortcuts-table tr + tr td { padding-top: 9px; }
+.shortcuts-table td:first-child {
+  padding-right: 16px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.shortcuts-table td:last-child {
+  color: var(--text-dim);
+  font-size: 13px;
+  vertical-align: middle;
+}
+kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg3);
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  line-height: 1.5;
+}
+
 /* ── Desktop enhancements ────────────────────────── */
 @media (min-width: 768px) {
   .import-zone { padding: 64px 48px; }

@@ -1,9 +1,17 @@
 import { Editor } from './editor.js'
 
-const importScreen = document.getElementById('import-screen')!
-const editorScreen = document.getElementById('editor-screen')!
-const importZone   = document.getElementById('import-zone')!
-const fileInput    = document.getElementById('file-input') as HTMLInputElement
+const importScreen     = document.getElementById('import-screen')!
+const editorScreen     = document.getElementById('editor-screen')!
+const importZone       = document.getElementById('import-zone')!
+const fileInput        = document.getElementById('file-input') as HTMLInputElement
+const btnShortcuts     = document.getElementById('btn-shortcuts')!
+const shortcutsDialog  = document.getElementById('shortcuts-dialog') as HTMLDialogElement
+
+btnShortcuts.addEventListener('click', () => shortcutsDialog.showModal())
+// Close when clicking the backdrop (outside the panel box)
+shortcutsDialog.addEventListener('click', (e) => {
+  if (e.target === shortcutsDialog) shortcutsDialog.close()
+})
 
 let editor: Editor | null = null
 
