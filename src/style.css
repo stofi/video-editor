@@ -295,6 +295,58 @@ html, body {
 .preset-btn.danger { border-color: var(--danger); color: var(--danger); }
 .preset-btn.danger:active { background: color-mix(in srgb, var(--danger) 15%, transparent); }
 
+/* Text overlay */
+.text-overlay-wrap {
+  display: none;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+.text-overlay-el {
+  position: absolute;
+  cursor: move;
+  pointer-events: all;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-weight: bold;
+  white-space: nowrap;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+  transform: translateX(-50%);
+}
+
+/* Text panel */
+#panel-text {
+  flex-direction: column;
+  height: auto;
+  padding: 10px 16px;
+  gap: 8px;
+  align-items: stretch;
+}
+#text-input {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 6px 10px;
+  outline: none;
+  width: 100%;
+}
+#text-input::placeholder { color: var(--text-dim); }
+#text-input:focus { border-color: var(--accent); }
+.color-picker-btn {
+  width: 32px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 /* Color panel */
 #panel-color {
   flex-direction: column;

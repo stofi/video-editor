@@ -5,9 +5,10 @@ import { getFFmpeg } from './ffmpeg.js'
 import { Timeline } from './timeline.js'
 import { CropOverlay, type AspectPreset } from './crop.js'
 import { ImageOverlay } from './overlay.js'
+import { TextOverlay } from './textoverlay.js'
 import { fetchFile } from '@ffmpeg/util'
 
-type Tool = 'trim' | 'crop' | 'rotate' | 'color' | 'speed' | 'mute-audio' | 'overlay'
+type Tool = 'trim' | 'crop' | 'rotate' | 'color' | 'speed' | 'mute-audio' | 'overlay' | 'text'
 type Rotation = 0 | 90 | 180 | 270
 
 function el<T extends HTMLElement>(id: string): T {
@@ -43,6 +44,11 @@ export class Editor {
   )
 
   private readonly imgOverlay = new ImageOverlay(
+    el('preview-area'),
+    el<HTMLVideoElement>('preview-video'),
+  )
+
+  private readonly textOverlay = new TextOverlay(
     el('preview-area'),
     el<HTMLVideoElement>('preview-video'),
   )
@@ -207,6 +213,19 @@ export class Editor {
       this._updateVideoFilter()
     })
 
+    // Text overlay
+    const textInput      = el<HTMLInputElement>('text-input')
+    const textSizeSlider = el<HTMLInputElement>('text-size')
+    const textSizeVal    = el('text-size-value')
+    const textColorPick  = el<HTMLInputElement>('text-color')
+    textInput.addEventListener('input', () => { this.textOverlay.setText(textInput.value) })
+    textSizeSlider.addEventListener('input', () => {
+      const pct = parseInt(textSizeSlider.value)
+      textSizeVal.textContent = `${pct}%`
+      this.textOverlay.setFontSize(pct / 100)
+    })
+    textColorPick.addEventListener('input', () => { this.textOverlay.setColor(textColorPick.value) })
+
     // Overlay file picker
     const overlayInput = el<HTMLInputElement>('overlay-input')
     overlayInput.addEventListener('change', () => {
@@ -260,6 +279,10 @@ export class Editor {
       this.muteAudio = !this.muteAudio
       const muteBtn = document.querySelector<HTMLElement>('[data-tool="mute-audio"]')
       if (muteBtn) muteBtn.style.color = this.muteAudio ? 'var(--danger)' : ''
+    } else if (tool === 'text') {
+      el('panel-text').hidden = false
+      this.textOverlay.show()
+      el<HTMLInputElement>('text-input').focus()
     } else if (tool === 'overlay') {
       el('panel-overlay').hidden = false
       // Auto-open file picker if no image loaded yet
@@ -295,18 +318,29 @@ export class Editor {
       const outputName = 'output.mp4'
       const outputFilename = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
       const hasOverlay = this.imgOverlay.visible && this.imgOverlay.file !== null
+      const hasText    = this.textOverlay.visible && this.textOverlay.text.trim() !== ''
+
+      // Compute output dimensions (needed for text canvas sizing)
+      let outW = this.videoEl.videoWidth
+      let outH = this.videoEl.videoHeight
+      if (this.crop.visible) { const c = this.crop.toPixels(); outW = c.w; outH = c.h }
+      if (this.rotation === 90 || this.rotation === 270) { [outW, outH] = [outH, outW] }
 
       await ff.writeFile(inputName, await fetchFile(this.file))
-      if (hasOverlay) {
-        await ff.writeFile('overlay.png', await fetchFile(this.imgOverlay.file!))
+      if (hasOverlay) await ff.writeFile('overlay.png', await fetchFile(this.imgOverlay.file!))
+      if (hasText) {
+        const canvas = this.textOverlay.toCanvas(outW, outH)
+        const pngBlob = await canvasToBlob(canvas)
+        await ff.writeFile('text-overlay.png', new Uint8Array(await pngBlob.arrayBuffer()))
       }
 
       const args = ['-i', inputName]
       if (hasOverlay) args.push('-i', 'overlay.png')
+      if (hasText)    args.push('-i', 'text-overlay.png')
 
       args.push('-ss', this.trimStart.toFixed(3), '-t', (this.trimEnd - this.trimStart).toFixed(3))
 
-      // Video filter chain (crop → speed)
+      // Video filter chain: crop → rotate/flip → color → speed
       const vfFilters: string[] = []
       if (this.crop.visible) {
         const c = this.crop.toPixels()
@@ -318,19 +352,30 @@ export class Editor {
         vfFilters.push(`setpts=${(1 / this.speed).toFixed(4)}*PTS`)
       }
 
-      if (hasOverlay) {
-        // Use filter_complex to composite overlay onto the (optionally filtered) video
-        const ov = this.imgOverlay.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
+      if (hasOverlay || hasText) {
         const filterParts: string[] = []
-        if (vfFilters.length > 0) {
-          filterParts.push(`[0:v]${vfFilters.join(',')}[base]`)
+        const baseLabel = vfFilters.length > 0 ? '[base]' : '[0:v]'
+        if (vfFilters.length > 0) filterParts.push(`[0:v]${vfFilters.join(',')}[base]`)
+
+        if (hasOverlay) {
+          // Image overlay input is always [1:v]; text (if any) follows at [2:v]
+          const ov = this.imgOverlay.toPixels(this.videoEl.videoWidth, this.videoEl.videoHeight)
+          const ovFilters = [`scale=${ov.w}:${ov.h}`, 'format=rgba']
+          if (ov.opacity < 1) ovFilters.push(`lut=a='val*${ov.opacity.toFixed(4)}'`)
+          filterParts.push(`[1:v]${ovFilters.join(',')}[ov]`)
+          if (hasText) {
+            filterParts.push(`${baseLabel}[ov]overlay=${ov.x}:${ov.y}[v1]`)
+            filterParts.push(`[2:v]format=rgba[txt]`)
+            filterParts.push(`[v1][txt]overlay=0:0[vout]`)
+          } else {
+            filterParts.push(`${baseLabel}[ov]overlay=${ov.x}:${ov.y}[vout]`)
+          }
+        } else {
+          // Text only — canvas PNG is [1:v], composited full-frame at 0:0
+          filterParts.push(`[1:v]format=rgba[txt]`)
+          filterParts.push(`${baseLabel}[txt]overlay=0:0[vout]`)
         }
-        // Scale overlay; use lut to scale alpha for opacity < 1 (preserves PNG transparency)
-        const ovFilters = [`scale=${ov.w}:${ov.h}`, 'format=rgba']
-        if (ov.opacity < 1) ovFilters.push(`lut=a='val*${ov.opacity.toFixed(4)}'`)
-        filterParts.push(`[1:v]${ovFilters.join(',')}[ov]`)
-        const base = vfFilters.length > 0 ? '[base]' : '[0:v]'
-        filterParts.push(`${base}[ov]overlay=${ov.x}:${ov.y}[vout]`)
+
         args.push('-filter_complex', filterParts.join(';'))
         args.push('-map', '[vout]')
         if (!this.muteAudio) args.push('-map', '0:a?')
@@ -371,6 +416,7 @@ export class Editor {
       await ff.deleteFile(inputName)
       await ff.deleteFile(outputName)
       if (hasOverlay) await ff.deleteFile('overlay.png')
+      if (hasText)    await ff.deleteFile('text-overlay.png')
     } catch (err) {
       console.error(err)
       alert('Export failed. See console for details.')
@@ -427,6 +473,12 @@ export class Editor {
     this.timeDisplay.textContent =
       `${fmt(this.videoEl.currentTime)} / ${fmt(this.videoEl.duration || 0)}`
   }
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('canvas.toBlob failed'))), 'image/png')
+  })
 }
 
 /** Build atempo filter chain — each value must be in [0.5, 2] */

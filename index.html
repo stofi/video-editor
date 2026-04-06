@@ -83,6 +83,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 9v6h4l5 5V4L13 9H9z"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
             <span>Mute</span>
           </button>
+          <button class="tool-btn" data-tool="text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            <span>Text</span>
+          </button>
           <button class="tool-btn" data-tool="color">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
             <span>Color</span>
@@ -119,6 +123,14 @@
               <button class="preset-btn" data-preset="9:16">9:16</button>
               <button class="preset-btn" data-preset="1:1">1:1</button>
               <button class="preset-btn" data-preset="4:3">4:3</button>
+            </div>
+          </div>
+          <div id="panel-text" class="tool-panel" hidden>
+            <input type="text" id="text-input" placeholder="Type text here…" />
+            <div class="color-row">
+              <label>Size <span id="text-size-value" class="color-val">7%</span></label>
+              <input type="range" id="text-size" min="3" max="20" step="1" value="7" />
+              <input type="color" id="text-color" value="#ffffff" class="color-picker-btn" title="Text color" />
             </div>
           </div>
           <div id="panel-color" class="tool-panel" hidden>
