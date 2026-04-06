@@ -2,38 +2,60 @@
  * Timeline: waveform canvas + trim handle drag (touch & mouse).
  */
 
-export class Timeline {
-  constructor({ wrap, canvas, trimRegion, startHandle, endHandle, playhead, onTrimChange }) {
-    this.wrap = wrap
-    this.canvas = canvas
-    this.trimRegion = trimRegion
-    this.startHandle = startHandle
-    this.endHandle = endHandle
-    this.playhead = playhead
-    this.onTrimChange = onTrimChange
+type Handle = 'start' | 'end'
 
-    this.duration = 0
-    this.trimStart = 0   // seconds
-    this.trimEnd = 0     // seconds
+interface TimelineOptions {
+  wrap: HTMLElement
+  canvas: HTMLCanvasElement
+  trimRegion: HTMLElement
+  startHandle: HTMLElement
+  endHandle: HTMLElement
+  playhead: HTMLElement
+  onTrimChange?: (start: number, end: number) => void
+}
+
+export class Timeline {
+  private wrap: HTMLElement
+  private canvas: HTMLCanvasElement
+  private trimRegion: HTMLElement
+  private startHandle: HTMLElement
+  private endHandle: HTMLElement
+  private playhead: HTMLElement
+  private onTrimChange: ((start: number, end: number) => void) | undefined
+
+  duration = 0
+  trimStart = 0
+  trimEnd = 0
+
+  constructor(opts: TimelineOptions) {
+    this.wrap = opts.wrap
+    this.canvas = opts.canvas
+    this.trimRegion = opts.trimRegion
+    this.startHandle = opts.startHandle
+    this.endHandle = opts.endHandle
+    this.playhead = opts.playhead
+    this.onTrimChange = opts.onTrimChange
 
     this._bindHandles()
   }
 
-  setDuration(duration) {
+  setDuration(duration: number): void {
     this.duration = duration
     this.trimStart = 0
     this.trimEnd = duration
     this._render()
   }
 
-  setPlayhead(currentTime) {
+  setPlayhead(currentTime: number): void {
     if (!this.duration) return
     const pct = (currentTime / this.duration) * 100
     this.playhead.style.left = `${pct}%`
   }
 
-  drawWaveform(audioBuffer) {
+  drawWaveform(audioBuffer: AudioBuffer): void {
     const ctx = this.canvas.getContext('2d')
+    if (!ctx) return
+
     const { width, height } = this.canvas.getBoundingClientRect()
     this.canvas.width = width * devicePixelRatio
     this.canvas.height = height * devicePixelRatio
@@ -49,7 +71,8 @@ export class Timeline {
     ctx.globalAlpha = 0.7
 
     for (let i = 0; i < width; i++) {
-      let min = 1, max = -1
+      let min = 1
+      let max = -1
       for (let j = 0; j < step; j++) {
         const v = data[i * step + j] ?? 0
         if (v < min) min = v
@@ -62,8 +85,10 @@ export class Timeline {
     }
   }
 
-  drawFlatWaveform() {
+  drawFlatWaveform(): void {
     const ctx = this.canvas.getContext('2d')
+    if (!ctx) return
+
     const { width, height } = this.canvas.getBoundingClientRect()
     this.canvas.width = width * devicePixelRatio
     this.canvas.height = height * devicePixelRatio
@@ -78,7 +103,7 @@ export class Timeline {
     ctx.stroke()
   }
 
-  _render() {
+  private _render(): void {
     if (!this.duration) return
     const startPct = (this.trimStart / this.duration) * 100
     const endPct   = (this.trimEnd   / this.duration) * 100
@@ -86,17 +111,17 @@ export class Timeline {
     this.trimRegion.style.right = `${100 - endPct}%`
   }
 
-  _bindHandles() {
+  private _bindHandles(): void {
     this._bindHandle(this.startHandle, 'start')
     this._bindHandle(this.endHandle,   'end')
   }
 
-  _bindHandle(el, which) {
+  private _bindHandle(el: HTMLElement, which: Handle): void {
     let startX = 0
     let startPct = 0
     let dragging = false
 
-    const onStart = (clientX) => {
+    const onStart = (clientX: number): void => {
       dragging = true
       startX = clientX
       startPct = which === 'start'
@@ -104,7 +129,7 @@ export class Timeline {
         : (this.trimEnd   / this.duration)
     }
 
-    const onMove = (clientX) => {
+    const onMove = (clientX: number): void => {
       if (!dragging || !this.duration) return
       const rect = this.wrap.getBoundingClientRect()
       const dx = clientX - startX
@@ -123,7 +148,7 @@ export class Timeline {
       this.onTrimChange?.(this.trimStart, this.trimEnd)
     }
 
-    const onEnd = () => { dragging = false }
+    const onEnd = (): void => { dragging = false }
 
     // Touch
     el.addEventListener('touchstart', (e) => { e.preventDefault(); onStart(e.touches[0].clientX) }, { passive: false })

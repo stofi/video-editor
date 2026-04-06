@@ -5,12 +5,12 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util'
 
-let instance = null
-let loadPromise = null
+let instance: FFmpeg | null = null
+let loadPromise: Promise<FFmpeg> | null = null
 
 const BASE_URL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
 
-export async function getFFmpeg(onProgress) {
+export async function getFFmpeg(onProgress?: (progress: number) => void): Promise<FFmpeg> {
   if (instance) return instance
 
   if (!loadPromise) {
@@ -38,6 +38,6 @@ export async function getFFmpeg(onProgress) {
   return loadPromise
 }
 
-export function isLoaded() {
+export function isLoaded(): boolean {
   return instance !== null
 }

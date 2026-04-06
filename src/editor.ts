@@ -5,76 +5,83 @@ import { getFFmpeg } from './ffmpeg.js'
 import { Timeline } from './timeline.js'
 import { fetchFile } from '@ffmpeg/util'
 
+type Tool = 'trim' | 'crop' | 'speed' | 'mute-audio'
+
+function el<T extends HTMLElement>(id: string): T {
+  const e = document.getElementById(id)
+  if (!e) throw new Error(`#${id} not found`)
+  return e as T
+}
+
 export class Editor {
+  private file: File | null = null
+  private _objectURL: string | null = null
+
+  private readonly videoEl     = el<HTMLVideoElement>('preview-video')
+  private readonly overlay     = el('processing-overlay')
+  private readonly overlayLabel = el('processing-label')
+  private readonly progressBar = el('progress-bar')
+  private readonly timeDisplay = el('time-display')
+
+  private speed = 1
+  private muteAudio = false
+  private trimStart = 0
+  private trimEnd = 0
+
+  private readonly timeline = new Timeline({
+    wrap:        el('timeline-wrap'),
+    canvas:      el<HTMLCanvasElement>('waveform-canvas'),
+    trimRegion:  el('trim-region'),
+    startHandle: el('trim-start'),
+    endHandle:   el('trim-end'),
+    playhead:    el('playhead'),
+    onTrimChange: (s, e) => { this.trimStart = s; this.trimEnd = e },
+  })
+
   constructor() {
-    this.file = null
-    this.videoEl = document.getElementById('preview-video')
-    this.processingOverlay = document.getElementById('processing-overlay')
-    this.processingLabel = document.getElementById('processing-label')
-    this.progressBar = document.getElementById('progress-bar')
-    this.timeDisplay = document.getElementById('time-display')
-
-    this.activeTool = 'trim'
-    this.speed = 1
-    this.muteAudio = false
-    this.trimStart = 0
-    this.trimEnd = 0
-
-    this.timeline = new Timeline({
-      wrap:         document.getElementById('timeline-wrap'),
-      canvas:       document.getElementById('waveform-canvas'),
-      trimRegion:   document.getElementById('trim-region'),
-      startHandle:  document.getElementById('trim-start'),
-      endHandle:    document.getElementById('trim-end'),
-      playhead:     document.getElementById('playhead'),
-      onTrimChange: (s, e) => { this.trimStart = s; this.trimEnd = e },
-    })
-
     this._bindPlayback()
     this._bindToolbar()
     this._bindExport()
   }
 
-  async load(file) {
+  async load(file: File): Promise<void> {
     this.file = file
-    // Revoke previous blob URL to avoid memory leak
     if (this._objectURL) URL.revokeObjectURL(this._objectURL)
     this._objectURL = URL.createObjectURL(file)
     this.videoEl.src = this._objectURL
 
-    await new Promise((res) => { this.videoEl.onloadedmetadata = res })
+    await new Promise<void>((res) => { this.videoEl.onloadedmetadata = () => res() })
     this.trimStart = 0
     this.trimEnd = this.videoEl.duration
     this.timeline.setDuration(this.videoEl.duration)
     this._updateTimeDisplay()
 
-    // Attempt waveform extraction (best-effort)
     this._extractWaveform(file).catch(() => this.timeline.drawFlatWaveform())
   }
 
-  async _extractWaveform(file) {
+  private async _extractWaveform(file: File): Promise<void> {
     const arrayBuffer = await file.arrayBuffer()
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-    // Mobile browsers may start AudioContext in suspended state
+    const AudioCtx = window.AudioContext ?? window.webkitAudioContext
+    if (!AudioCtx) return
+    const audioCtx = new AudioCtx()
     if (audioCtx.state === 'suspended') await audioCtx.resume()
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
     this.timeline.drawWaveform(audioBuffer)
-    audioCtx.close()
+    void audioCtx.close()
   }
 
-  _bindPlayback() {
-    const playBtn = document.getElementById('btn-play')
-    const iconPlay = document.getElementById('icon-play')
-    const iconPause = document.getElementById('icon-pause')
-    const muteBtn = document.getElementById('btn-mute')
+  private _bindPlayback(): void {
+    const playBtn   = el('btn-play')
+    const iconPlay  = el('icon-play')
+    const iconPause = el('icon-pause')
+    const muteBtn   = el('btn-mute')
 
     playBtn.addEventListener('click', () => {
       if (this.videoEl.paused) {
-        // Clamp playback to trim region
         if (this.videoEl.currentTime < this.trimStart || this.videoEl.currentTime >= this.trimEnd) {
           this.videoEl.currentTime = this.trimStart
         }
-        this.videoEl.play().catch(() => {/* interrupted — ignore */})
+        this.videoEl.play().catch(() => { /* interrupted — ignore */ })
       } else {
         this.videoEl.pause()
       }
@@ -90,24 +97,22 @@ export class Editor {
 
     this.videoEl.addEventListener('timeupdate', () => {
       const t = this.videoEl.currentTime
-      // Stop at trim end
       if (t >= this.trimEnd) { this.videoEl.pause(); this.videoEl.currentTime = this.trimEnd }
       this.timeline.setPlayhead(t)
       this._updateTimeDisplay()
     })
   }
 
-  _bindToolbar() {
-    document.querySelectorAll('.tool-btn[data-tool]').forEach((btn) => {
+  private _bindToolbar(): void {
+    document.querySelectorAll<HTMLElement>('.tool-btn[data-tool]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tool = btn.dataset.tool
-        this._setActiveTool(tool)
+        const tool = btn.dataset['tool'] as Tool | undefined
+        if (tool) this._setActiveTool(tool)
       })
     })
 
-    // Speed slider
-    const speedSlider = document.getElementById('speed-slider')
-    const speedValue  = document.getElementById('speed-value')
+    const speedSlider = el<HTMLInputElement>('speed-slider')
+    const speedValue  = el('speed-value')
     speedSlider.addEventListener('input', () => {
       this.speed = parseFloat(speedSlider.value)
       speedValue.textContent = `${this.speed}×`
@@ -115,29 +120,27 @@ export class Editor {
     })
   }
 
-  _setActiveTool(tool) {
-    this.activeTool = tool
-    document.querySelectorAll('.tool-btn[data-tool]').forEach((b) =>
-      b.classList.toggle('active', b.dataset.tool === tool)
+  private _setActiveTool(tool: Tool): void {
+    document.querySelectorAll<HTMLElement>('.tool-btn[data-tool]').forEach((b) =>
+      b.classList.toggle('active', b.dataset['tool'] === tool)
     )
 
-    const panels = document.querySelectorAll('.tool-panel')
-    panels.forEach((p) => { p.hidden = true })
+    document.querySelectorAll<HTMLElement>('.tool-panel').forEach((p) => { p.hidden = true })
 
     if (tool === 'speed') {
-      document.getElementById('panel-speed').hidden = false
+      el('panel-speed').hidden = false
     } else if (tool === 'mute-audio') {
       this.muteAudio = !this.muteAudio
-      document.querySelector('[data-tool="mute-audio"]').style.color =
-        this.muteAudio ? 'var(--danger)' : ''
+      const muteBtn = document.querySelector<HTMLElement>('[data-tool="mute-audio"]')
+      if (muteBtn) muteBtn.style.color = this.muteAudio ? 'var(--danger)' : ''
     }
   }
 
-  _bindExport() {
-    document.getElementById('btn-export').addEventListener('click', () => this._export())
+  private _bindExport(): void {
+    el('btn-export').addEventListener('click', () => { void this._export() })
   }
 
-  async _export() {
+  private async _export(): Promise<void> {
     if (!this.file) return
 
     this._showProcessing('Loading FFmpeg…')
@@ -159,28 +162,21 @@ export class Editor {
     try {
       const inputName = 'input' + this.file.name.slice(this.file.name.lastIndexOf('.'))
       const outputName = 'output.mp4'
+      const outputFilename = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
 
       await ff.writeFile(inputName, await fetchFile(this.file))
 
       const args = ['-i', inputName]
 
-      // Trim
-      const start = this.trimStart.toFixed(3)
-      const duration = (this.trimEnd - this.trimStart).toFixed(3)
-      args.push('-ss', start, '-t', duration)
+      args.push('-ss', this.trimStart.toFixed(3), '-t', (this.trimEnd - this.trimStart).toFixed(3))
 
-      // Speed (via setpts + atempo)
       if (this.speed !== 1) {
-        const vf = `setpts=${(1 / this.speed).toFixed(4)}*PTS`
-        args.push('-vf', vf)
+        args.push('-vf', `setpts=${(1 / this.speed).toFixed(4)}*PTS`)
         if (!this.muteAudio) {
-          // atempo only supports 0.5–2; chain for values outside that range
-          const tempos = _buildAtempo(this.speed)
-          args.push('-af', tempos.map((v) => `atempo=${v}`).join(','))
+          args.push('-af', buildAtempo(this.speed).map((v) => `atempo=${v}`).join(','))
         }
       }
 
-      // Mute
       if (this.muteAudio) args.push('-an')
 
       args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23')
@@ -189,25 +185,25 @@ export class Editor {
 
       await ff.exec(args)
 
-      const data = await ff.readFile(outputName)
-      const blob = new Blob([data.buffer], { type: 'video/mp4' })
-      const url  = URL.createObjectURL(blob)
+      const raw = await ff.readFile(outputName)
+      if (!(raw instanceof Uint8Array)) throw new Error('Expected binary output from FFmpeg')
+      // Copy into a plain ArrayBuffer — FFmpeg may return a SharedArrayBuffer
+      const blob = new Blob([new Uint8Array(raw)], { type: 'video/mp4' })
 
-      // Use navigator.share on mobile if available, fall back to anchor download
-      if (navigator.canShare?.({ files: [new File([blob], 'video.mp4', { type: 'video/mp4' })] })) {
-        const shareFile = new File([blob], 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4', { type: 'video/mp4' })
-        await navigator.share({ files: [shareFile] }).catch(() => {/* dismissed */})
+      const shareFile = new File([blob], outputFilename, { type: 'video/mp4' })
+      if (navigator.canShare?.({ files: [shareFile] })) {
+        await navigator.share({ files: [shareFile] }).catch(() => { /* dismissed */ })
       } else {
+        const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = 'edited-' + this.file.name.replace(/\.[^.]+$/, '') + '.mp4'
-        // Append to DOM required for Safari iOS
+        a.download = outputFilename
         document.body.appendChild(a)
         a.click()
         document.body.removeChild(a)
+        URL.revokeObjectURL(url)
       }
 
-      // Cleanup
       await ff.deleteFile(inputName)
       await ff.deleteFile(outputName)
     } catch (err) {
@@ -218,18 +214,18 @@ export class Editor {
     }
   }
 
-  _showProcessing(label = 'Processing…') {
-    this.processingLabel.textContent = label
+  private _showProcessing(label: string): void {
+    this.overlayLabel.textContent = label
     this.progressBar.style.width = '0%'
-    this.processingOverlay.hidden = false
+    this.overlay.hidden = false
   }
 
-  _hideProcessing() {
-    this.processingOverlay.hidden = true
+  private _hideProcessing(): void {
+    this.overlay.hidden = true
   }
 
-  _updateTimeDisplay() {
-    const fmt = (s) => {
+  private _updateTimeDisplay(): void {
+    const fmt = (s: number): string => {
       const m = Math.floor(s / 60)
       const sec = Math.floor(s % 60).toString().padStart(2, '0')
       return `${m}:${sec}`
@@ -240,8 +236,8 @@ export class Editor {
 }
 
 /** Build atempo filter chain — each value must be in [0.5, 2] */
-function _buildAtempo(speed) {
-  const result = []
+function buildAtempo(speed: number): number[] {
+  const result: number[] = []
   let remaining = speed
   while (remaining > 2) { result.push(2); remaining /= 2 }
   while (remaining < 0.5) { result.push(0.5); remaining /= 0.5 }
